@@ -7,64 +7,68 @@ import psycopg2
 import bleach
 
 
-def connect():
-    """Connect to the PostgreSQL database.  Returns a database connection."""
-    return psycopg2.connect("dbname=tournament")
+def connect(database_name="tournament"):
+    """Connect to the PostgreSQL database.  Returns a database connection
+    and a cursor."""
+    try:
+        db = psycopg2.connect("dbname={}".format(database_name))
+        cursor = db.cursor()
+        return db, cursor
+    except:
+        print("<error message>")
 
 
 def deleteMatches():
     """Remove all the match records from the database."""
+    try:
+        # Connect to the tournament database and remove all
+        # matches from match table
+        tournamentDB, cursor = connect()
+        cursor.execute("DELETE FROM match")
 
-    # Connect to the tournament database and remove all
-    # matches from match table
-    tournamentDB = connect()
-    cursor = tournamentDB.cursor()
-    cursor.execute("DELETE FROM match")
-
-    # Make the changes to the database persistent
-    tournamentDB.commit()
-
-    # Close communication with the database
-    cursor.close()
-    tournamentDB.close()
+        # Make the changes to the database persistent
+        tournamentDB.commit()
+    finally:
+        # Close communication with the database
+        cursor.close()
+        tournamentDB.close()
 
 
 def deletePlayers():
     """Remove all the player records from the database."""
+    try:
+        # Connect to the tournament database and remove all players
+        # from player table
+        tournamentDB, cursor = connect()
+        cursor.execute("DELETE FROM player")
 
-    # Connect to the tournament database and remove all players
-    # from player table
-    tournamentDB = connect()
-    cursor = tournamentDB.cursor()
-    cursor.execute("DELETE FROM player")
-
-    # Make the changes to the database persistent
-    tournamentDB.commit()
-
-    # Close communication with the database
-    cursor.close()
-    tournamentDB.close()
+        # Make the changes to the database persistent
+        tournamentDB.commit()
+    finally:
+        # Close communication with the database
+        cursor.close()
+        tournamentDB.close()
 
 
 def countPlayers():
     """Returns the number of players currently registered."""
+    try:
+        # Connect to the tournament database and retrieve the number
+        # of players in the player table
+        playerCount = 0
+        tournamentDB, cursor = connect()
+        cursor.execute("SELECT count(*) FROM player")
+        result = cursor.fetchone()
 
-    # Connect to the tournament database and retrieve the number
-    # of players in the player table
-    playerCount = 0
-    tournamentDB = connect()
-    cursor = tournamentDB.cursor()
-    cursor.execute("SELECT count(*) FROM player")
-    result = cursor.fetchone()
+        if result is not None:
+            playerCount = int(result[0])
 
-    if result is not None:
-        playerCount = int(result[0])
+        return playerCount
 
-    # Close communication with the database
-    cursor.close()
-    tournamentDB.close()
-
-    return playerCount
+    finally:
+        # Close communication with the database
+        cursor.close()
+        tournamentDB.close()
 
 
 def registerPlayer(name):
@@ -76,20 +80,19 @@ def registerPlayer(name):
     Args:
       name: the player's full name (need not be unique).
     """
+    try:
+        # Connect to the tournament database and insert players
+        # into the player table
+        tournamentDB, cursor = connect()
+        cursor.execute("INSERT INTO player (name) VALUES (%s)",
+                       (bleach.clean(name),))
 
-    # Connect to the tournament database and insert players
-    # into the player table
-    tournamentDB = connect()
-    cursor = tournamentDB.cursor()
-    cursor.execute("INSERT INTO player (name) VALUES (%s)",
-                   (bleach.clean(name),))
-
-    # Make the changes to the database persistent
-    tournamentDB.commit()
-
-    # Close communication with the database
-    cursor.close()
-    tournamentDB.close()
+        # Make the changes to the database persistent
+        tournamentDB.commit()
+    finally:
+        # Close communication with the database
+        cursor.close()
+        tournamentDB.close()
 
 
 def playerStandings():
@@ -105,19 +108,18 @@ def playerStandings():
         wins: the number of matches the player has won
         matches: the number of matches the player has played
     """
+    try:
+        # Connect to the tournament database and retrieve the players
+        # standings sorted by wins
+        tournamentDB, cursor = connect()
+        cursor.execute("SELECT * FROM standings ORDER BY wins")
+        standings = cursor.fetchall()
 
-    # Connect to the tournament database and retrieve the players
-    # standings sorted by wins
-    tournamentDB = connect()
-    cursor = tournamentDB.cursor()
-    cursor.execute("SELECT * FROM standings ORDER BY wins")
-    standings = cursor.fetchall()
-
-    # Close communication with the database
-    cursor.close()
-    tournamentDB.close()
-
-    return standings
+        return standings
+    finally:
+        # Close communication with the database
+        cursor.close()
+        tournamentDB.close()
 
 
 def reportMatch(winner, loser):
@@ -127,20 +129,21 @@ def reportMatch(winner, loser):
       winner:  the id number of the player who won
       loser:  the id number of the player who lost
     """
-    # Connect to the tournament database and insert into the match
-    # table the matches that have been played including the winners
-    # and the losers
-    tournamentDB = connect()
-    cursor = tournamentDB.cursor()
-    cursor.execute("INSERT INTO match (winnerId, loserId) VALUES (%s, %s)",
-                   (winner, loser))
+    try:
+        # Connect to the tournament database and insert into the match
+        # table the matches that have been played including the winners
+        # and the losers
+        tournamentDB, cursor = connect()
+        cursor.execute("INSERT INTO match (winnerId, loserId) VALUES (%s, %s)",
+                       (winner, loser))
 
-    # Make the changes to the database persistent
-    tournamentDB.commit()
+        # Make the changes to the database persistent
+        tournamentDB.commit()
 
-    # Close communication with the database
-    cursor.close()
-    tournamentDB.close()
+    finally:
+        # Close communication with the database
+        cursor.close()
+        tournamentDB.close()
 
 
 def swissPairings():
@@ -161,28 +164,23 @@ def swissPairings():
     # Connect to the tournament database and retrieve the standings
     # sorted by wins
     pairings = []
-    tournamentDB = connect()
-    cursor = tournamentDB.cursor()
-    cursor.execute("SELECT * FROM standings ORDER BY wins")
-    rows = cursor.fetchall()
+    standings = playerStandings()
 
-    # Loop through the standings row by row and determine which players
-    # have won the same amount of matches.  Once identified, add the player
-    # to the pairing list.
-    if rows is not None:
-        while rows:
-            player1 = rows.pop()
+    # Check that standings list has values and that there are an even
+    # number of players then loop through the standings row by row
+    # to determine which players have won the same amount of matches.
+    # Once identified, add the player to the pairing list
+    print(len(standings))
+    if standings is not None and len(standings) % 2 == 0:
+        while standings:
+            player1 = standings.pop()
             player1Wins = player1[2]
-            for row in rows:
+            for row in standings:
                 player2 = row
                 player2Wins = player2[2]
                 if player1Wins == player2Wins:
                     pairings.append((player1[0], player1[1],
                                     player2[0], player2[1]))
-                    rows.pop()
-
-    # Close communication with the database
-    cursor.close()
-    tournamentDB.close()
+                    standings.pop()
 
     return pairings
